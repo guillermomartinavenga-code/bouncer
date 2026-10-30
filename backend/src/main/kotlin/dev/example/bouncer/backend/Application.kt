@@ -18,11 +18,14 @@ import io.github.smiley4.ktoropenapi.OpenApi
 import io.github.smiley4.ktoropenapi.config.OutputFormat
 import io.github.smiley4.ktoropenapi.openApi
 import io.github.smiley4.ktorswaggerui.swaggerUI
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import org.koin.ktor.ext.inject
@@ -37,6 +40,17 @@ fun Application.module() {
         json()
     }
     install(CallLogging)
+    install(CORS) {
+        // The browser web app (dev server on :8081) calls this backend cross-origin. Only that dev
+        // origin is allowed; the Android app isn't a browser, so CORS doesn't apply to it.
+        allowHost("localhost:8081", schemes = listOf("http"))
+        allowHost("127.0.0.1:8081", schemes = listOf("http"))
+        allowMethod(HttpMethod.Put)
+        allowMethod(HttpMethod.Patch)
+        allowMethod(HttpMethod.Delete)
+        allowHeader(HttpHeaders.Authorization)
+        allowHeader(HttpHeaders.ContentType)
+    }
     installStatusPages()
 
     install(OpenApi) {
