@@ -42,6 +42,8 @@ fun BouncerApp(storage: KeystoreTokenStorage, unlocker: BiometricUnlocker) {
             // can talk to the backend until the biometric prompt succeeds.
             var locked by remember { mutableStateOf(storage.isLocked()) }
             var unlockMessage by remember { mutableStateOf<String?>(null) }
+            // Hoisted so a failed login (which swaps the whole screen out) doesn't wipe what was typed.
+            var email by remember { mutableStateOf("") }
 
             if (locked) {
                 UnlockScreen(
@@ -72,7 +74,7 @@ fun BouncerApp(storage: KeystoreTokenStorage, unlocker: BiometricUnlocker) {
                 is UiState.Content -> {
                     val user = current.data
                     if (user == null) {
-                        LoginScreen(error = null, onLogin = sessionViewModel::login)
+                        LoginScreen(email, { email = it }, error = null, onLogin = sessionViewModel::login)
                     } else {
                         when (user.role) {
                             Role.CUSTOMER -> CustomerHome(user, sessionViewModel::logout, sessionViewModel::onSessionExpired)
@@ -81,15 +83,19 @@ fun BouncerApp(storage: KeystoreTokenStorage, unlocker: BiometricUnlocker) {
                         }
                     }
                 }
-                is UiState.Error -> LoginScreen(error = current, onLogin = sessionViewModel::login)
+                is UiState.Error -> LoginScreen(email, { email = it }, error = current, onLogin = sessionViewModel::login)
             }
         }
     }
 }
 
 @Composable
-private fun LoginScreen(error: UiState.Error?, onLogin: (String, String) -> Unit) {
-    var email by remember { mutableStateOf("") }
+private fun LoginScreen(
+    email: String,
+    onEmailChange: (String) -> Unit,
+    error: UiState.Error?,
+    onLogin: (String, String) -> Unit,
+) {
     var password by remember { mutableStateOf("") }
 
     Column(
@@ -99,7 +105,7 @@ private fun LoginScreen(error: UiState.Error?, onLogin: (String, String) -> Unit
         Text("Bouncer", style = MaterialTheme.typography.headlineLarge)
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it },
+            onValueChange = onEmailChange,
             label = { Text("Email") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),

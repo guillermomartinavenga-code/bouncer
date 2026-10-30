@@ -15,9 +15,8 @@ not a goal in itself. Do not add business functionality beyond what is specified
 
 ## Current state
 
-Phases 1–4 of `PLAN.md` are implemented (backend, shared, tests, Android app). Still to do: the web
-app (Phase 5) and the README with the demo-script walkthrough (Phase 6). The plan below remains the
-reference spec.
+Phases 1–5 of `PLAN.md` are implemented (backend, shared, tests, Android app, web app). Still to do:
+the README with the demo-script walkthrough (Phase 6). The plan below remains the reference spec.
 
 Commands (Gradle wrapper; Android builds need `ANDROID_HOME=$HOME/Android/Sdk`, or a
 `local.properties` with `sdk.dir`, which IntelliJ creates and git ignores):
@@ -27,14 +26,23 @@ Commands (Gradle wrapper; Android builds need `ANDROID_HOME=$HOME/Android/Sdk`, 
 ./gradlew :shared:jvmTest              # unit tests (BOLA, client_type, HTTP-client refresh)
 ./gradlew :shared:jvmTest --tests "*PolicyDecisionPointTest"   # a single test class
 ./gradlew :android:assembleDebug       # Android APK; the emulator reaches the backend at 10.0.2.2:8080
+./gradlew :web:wasmJsBrowserDevelopmentRun   # web app on http://localhost:8081 (needs the backend on :8080)
 ./gradlew build                        # everything
 ```
+
+Compiling Kotlin/Wasm needs a bigger compiler heap than the default; `gradle.properties` sets
+`kotlin.daemon.jvmargs=-Xmx3g` (without it the web build fails with an OutOfMemoryError).
 
 Layout notes that aren't obvious from a single file:
 - Domain, DTOs, `BouncerApiClient` (Ktor client with transparent token refresh) and the concrete
   ViewModels all live in `shared/commonMain`; `backend` and `android` only add adapters
   (in-memory repos/JWT/BCrypt, and Keystore + biometric token storage + Compose UI respectively).
-- Android ViewModels are plain objects owned by Compose (`rememberViewModel`), not androidx
+- The web app is Compose Multiplatform on the `wasmJs` target, with tokens kept in memory only (a page
+  reload logs out). The browser calls the backend cross-origin, so the backend's CORS rule allows
+  only `localhost:8081`; if you change the web dev-server port, change it there too. `web/build.gradle.kts`
+  sets `devtool = "source-map"` and `index.html` loads the bundle as `type="module"` because
+  kotlinx-io (via Ktor) reads a bare `import.meta` that breaks under webpack's default `eval` devtool.
+- Android ViewModels (the web ones too) are plain objects owned by Compose (`rememberViewModel`), not androidx
   ViewModels; the activity opts out of recreation via `configChanges` for that reason.
 - The Android app keeps only the refresh token on disk, encrypted with an auth-required Keystore
   RSA key: encrypting uses the public key (no prompt), decrypting needs a biometric prompt.

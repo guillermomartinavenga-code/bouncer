@@ -1,6 +1,7 @@
 package dev.example.bouncer.shared.presentation
 
 import dev.example.bouncer.shared.client.BouncerApiClient
+import dev.example.bouncer.shared.common.ErrorType
 import dev.example.bouncer.shared.dto.CreateOrderRequest
 import dev.example.bouncer.shared.dto.ItemResponse
 import dev.example.bouncer.shared.dto.OrderLineDto
@@ -56,8 +57,13 @@ class OrderLookupViewModel(private val api: BouncerApiClient) : BouncerViewModel
     }
 
     fun lookup(orderId: String) = launch {
+        val id = orderId.trim()
+        if (id.isEmpty()) {
+            setState(UiState.Error(ErrorType.UNKNOWN, "Enter an order id to look up."))
+            return@launch
+        }
         setState(UiState.Loading)
-        setState(api.getOrder(orderId.trim()))
+        setState(api.getOrder(id))
     }
 }
 
