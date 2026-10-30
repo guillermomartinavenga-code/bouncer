@@ -10,7 +10,7 @@ demonstrate, with running code, understanding of RBAC, object-level authorizatio
 short-lived tokens, and "never trust the client." It also doubles as a reusable base for a *future*
 objective on OAuth 2.0 / OpenID Connect, which is **not** implemented in this project.
 
-The "orders" domain (`Item`, `Pedido`, `Cliente`) is a vehicle for demonstrating security concepts,
+The "orders" domain (`Item`, `Order`, `Customer`) is a vehicle for demonstrating security concepts,
 not a goal in itself. Do not add business functionality beyond what is specified below.
 
 ## Current state
@@ -57,16 +57,25 @@ specified below), pagination, i18n, polished visual design.
 Web run identical business logic and model screen state identically. `backend`, `android`, and
 `web` all depend on `shared`; `shared` never depends on them.
 
+## Naming conventions
+
+- **Base package:** `dev.example.bouncer` (e.g. `dev.example.bouncer.shared.domain`,
+  `dev.example.bouncer.backend.routes`).
+- Everything is named in English — domain entities, fields, enums, and HTTP routes alike (e.g.
+  `User`, `Order`, `Customer`, `status`, `createdAt`, `PENDING`/`DISPATCHED`/`CANCELLED`, `/orders`,
+  `/customers`). There is no Spanish naming anywhere in the codebase, even though some of the
+  original planning conversation was in Spanish.
+
 ## Data model (in-memory, seeded on backend startup)
 
 | Entity | Main fields |
 |---|---|
-| **Usuario** | id, nombre, email, passwordHash (BCrypt), rol (`CUSTOMER` / `DISPATCHER` / `ADMIN`) |
-| **Item** | id, nombre, precio, stock |
-| **Pedido** | id, clienteId, líneas (itemId + cantidad), estado (`PENDIENTE` / `DESPACHADO` / `CANCELADO`), fechaCreación |
+| **User** | id, name, email, passwordHash (BCrypt), role (`CUSTOMER` / `DISPATCHER` / `ADMIN`) |
+| **Item** | id, name, price, stock |
+| **Order** | id, customerId, lines (itemId + quantity), status (`PENDING` / `DISPATCHED` / `CANCELLED`), createdAt |
 
-Seed: 2 `CUSTOMER`, 1 `ADMIN`, 1 `DISPATCHER`; 4–5 `Item`; 2–3 `Pedido` per customer (at least one
-`PENDIENTE` each). Use in-memory structures (`ConcurrentHashMap` or equivalent) — no database.
+Seed: 2 `CUSTOMER`, 1 `ADMIN`, 1 `DISPATCHER`; 4–5 `Item`; 2–3 `Order` per customer (at least one
+`PENDING` each). Use in-memory structures (`ConcurrentHashMap` or equivalent) — no database.
 
 ## Role/permission matrix (non-negotiable without confirming first)
 
@@ -81,7 +90,7 @@ Seed: 2 `CUSTOMER`, 1 `ADMIN`, 1 `DISPATCHER`; 4–5 `Item`; 2–3 `Pedido` per 
 | View all orders | ❌ | ✅ | ✅ |
 | Mark order as dispatched | ❌ | **✅ exclusive** | ❌ |
 | Cancel own order (if pending) | ✅ | ❌ | ✅ (any) |
-| Manage clients | ❌ | ❌ | ✅ |
+| List all customers | ❌ | ❌ | ✅ |
 
 The two most important authorization rules must be explicit, testable domain logic — not a
 scattered `if` in a route:
@@ -90,6 +99,12 @@ scattered `if` in a route:
   customer's, even if they know the id.
 - **`client_type` login restriction:** the server rejects a login whose user role doesn't match the
   declared `client_type` (per the table above), regardless of what screens exist in either client app.
+
+Customer and item management stay deliberately minimal: `ADMIN` can list customers (`GET
+/customers`) and see their orders via the existing `GET /orders`, and items only get the CRUD
+already listed below. Do not add customer CRUD (create/update/delete) or any other admin management
+screen beyond what's explicitly listed — this is a scope decision to keep the project focused on
+authn/authz, not a gap to fill in.
 
 ## Authentication & authorization (backend)
 
@@ -127,13 +142,13 @@ POST   /items                  (ADMIN)
 PUT    /items/{id}             (ADMIN)
 DELETE /items/{id}             (ADMIN)
 
-GET    /pedidos                (ADMIN, DISPATCHER: all | CUSTOMER: own only)
-GET    /pedidos/{id}           (ownership check if role is CUSTOMER)
-POST   /pedidos                (CUSTOMER: own | ADMIN: on behalf of anyone)
-PATCH  /pedidos/{id}/estado    (DISPATCHER exclusively)
-DELETE /pedidos/{id}           (CUSTOMER: own + pending | ADMIN: any)
+GET    /orders                 (ADMIN, DISPATCHER: all | CUSTOMER: own only)
+GET    /orders/{id}            (ownership check if role is CUSTOMER)
+POST   /orders                 (CUSTOMER: own | ADMIN: on behalf of anyone)
+PATCH  /orders/{id}/status     (DISPATCHER exclusively)
+DELETE /orders/{id}            (CUSTOMER: own + pending | ADMIN: any)
 
-GET    /clientes               (ADMIN)
+GET    /customers              (ADMIN)
 ```
 
 ## Cross-cutting technical decisions
@@ -177,18 +192,25 @@ enum class ErrorType { UNAUTHORIZED, FORBIDDEN, NETWORK, UNKNOWN }
 - The resource server validates tokens by signature against a public key (JWKS), never by logic
   coupled to how the token was issued.
 - The login flow is isolated under `/auth/*` so it can later be replaced by a redirect flow to an
-  external Authorization Server (with PKCE) without touching `/items` or `/pedidos`.
+  external Authorization Server (with PKCE) without touching `/items` or `/orders`.
 - The shared HTTP client separates "valid token" from "how it was obtained," so a different login
   provider can be added later without rewriting that layer.
+
+## Decisions confirmed
+
+- Cross-customer object-level access (`GET /orders/{id}` on someone else's order) returns **403
+  Forbidden**, not 404.
+- Customer and item management are deliberately minimal (see the note under the role/permission
+  matrix) — no customer CRUD beyond `GET /customers`.
 
 ## Demo script (acceptance criteria — document how to reproduce each in the README)
 
 | # | Scenario | Expected result |
 |---|---|---|
 | 1 | Login; access token expires at 5 min and auto-refreshes; refresh token expires at 10 min and forces a new login | Transparent retry within the 10 min window; outside it, login is required again |
-| 2 | Client A requests `GET /pedidos/{id}` of a Client B order | 403 or 404 (either is fine, document which); in-app `UiState.Error(FORBIDDEN)` |
-| 3 | With a `CUSTOMER` token, call `PATCH /pedidos/{id}/estado` directly (no screen exposes this) | 403 |
-| 4 | With an `ADMIN` token, call `PATCH /pedidos/{id}/estado` | 403 (only `DISPATCHER` can) |
+| 2 | Client A requests `GET /orders/{id}` of a Client B order | 403 (chosen over 404 — see "Decisions confirmed" below); in-app `UiState.Error(FORBIDDEN)` |
+| 3 | With a `CUSTOMER` token, call `PATCH /orders/{id}/status` directly (no screen exposes this) | 403 |
+| 4 | With an `ADMIN` token, call `PATCH /orders/{id}/status` | 403 (only `DISPATCHER` can) |
 | 5 | Login with the `DISPATCHER`'s email but `client_type: "web"` | 403/401 at login, before any token is issued |
 | 6 | `POST /auth/logout` with a refresh token, then `POST /auth/refresh` with that same token | Refresh fails (token revoked) |
 | 7 | On Android, access the saved session without passing biometric unlock | Saved token unusable; usable after unlock |
