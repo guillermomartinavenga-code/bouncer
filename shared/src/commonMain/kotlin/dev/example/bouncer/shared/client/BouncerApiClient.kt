@@ -108,9 +108,40 @@ class BouncerApiClient(
                 }
             }
         }
+        clearLocalSession()
+        return result
+    }
+
+    /** Drops the stored tokens without telling the server (e.g. the session already expired). */
+    suspend fun clearLocalSession() {
         tokenStorage.clear()
         forgetCachedBearerTokens()
-        return result
+    }
+
+    /**
+     * Exchanges the stored refresh token for a fresh token pair, e.g. after the Android app
+     * unlocks its saved session. A rejected refresh token also clears the local session.
+     */
+    suspend fun restoreSession(): UiState<Unit> {
+        val refreshToken = tokenStorage.getRefreshToken()
+            ?: return UiState.Error(ErrorType.UNAUTHORIZED, "no saved session")
+        return when (val result = safeCall<TokenPairResponse> {
+            httpClient.post("$baseUrl/auth/refresh") {
+                contentType(ContentType.Application.Json)
+                setBody(RefreshRequest(refreshToken))
+            }
+        }) {
+            is UiState.Content -> {
+                tokenStorage.saveTokens(result.data.accessToken, result.data.refreshToken)
+                forgetCachedBearerTokens()
+                UiState.Content(Unit)
+            }
+            is UiState.Error -> {
+                if (result.type == ErrorType.UNAUTHORIZED) clearLocalSession()
+                result
+            }
+            UiState.Loading -> UiState.Loading
+        }
     }
 
     suspend fun me(): UiState<UserResponse> = safeCall { httpClient.get("$baseUrl/me") }

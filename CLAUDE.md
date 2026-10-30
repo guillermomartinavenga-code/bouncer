@@ -15,9 +15,30 @@ not a goal in itself. Do not add business functionality beyond what is specified
 
 ## Current state
 
-The repository currently contains only `README.md`, `LICENSE`, `.gitignore`, and this file — no
-source code or build files exist yet. The full approved plan is captured below as the reference
-spec for scaffolding and implementation.
+Phases 1–4 of `PLAN.md` are implemented (backend, shared, tests, Android app). Still to do: the web
+app (Phase 5) and the README with the demo-script walkthrough (Phase 6). The plan below remains the
+reference spec.
+
+Commands (Gradle wrapper; Android builds need `ANDROID_HOME=$HOME/Android/Sdk`, or a
+`local.properties` with `sdk.dir`, which IntelliJ creates and git ignores):
+
+```bash
+./gradlew :backend:run                 # backend on http://localhost:8080 (Swagger UI at /swagger)
+./gradlew :shared:jvmTest              # unit tests (BOLA, client_type, HTTP-client refresh)
+./gradlew :shared:jvmTest --tests "*PolicyDecisionPointTest"   # a single test class
+./gradlew :android:assembleDebug       # Android APK; the emulator reaches the backend at 10.0.2.2:8080
+./gradlew build                        # everything
+```
+
+Layout notes that aren't obvious from a single file:
+- Domain, DTOs, `BouncerApiClient` (Ktor client with transparent token refresh) and the concrete
+  ViewModels all live in `shared/commonMain`; `backend` and `android` only add adapters
+  (in-memory repos/JWT/BCrypt, and Keystore + biometric token storage + Compose UI respectively).
+- Android ViewModels are plain objects owned by Compose (`rememberViewModel`), not androidx
+  ViewModels; the activity opts out of recreation via `configChanges` for that reason.
+- The Android app keeps only the refresh token on disk, encrypted with an auth-required Keystore
+  RSA key: encrypting uses the public key (no prompt), decrypting needs a biometric prompt.
+  Testing it on an emulator requires a screen lock (PIN) and an enrolled fingerprint.
 
 ## Scope
 

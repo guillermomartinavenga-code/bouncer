@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
 }
 
 group = "dev.example.bouncer"
@@ -8,6 +9,12 @@ version = "0.1.0"
 
 kotlin {
     jvm()
+
+    android {
+        namespace = "dev.example.bouncer.shared"
+        compileSdk = 36
+        minSdk = 29
+    }
 
     sourceSets {
         commonMain.dependencies {
