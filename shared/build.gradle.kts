@@ -14,7 +14,11 @@ kotlin {
 
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
-        browser()
+        browser {
+            // The commonTest suite is verified on the JVM; running it again under Karma in a browser
+            // is out of scope and fails to launch here, which would break `./gradlew build`.
+            testTask { enabled = false }
+        }
     }
 
     android {
