@@ -1,35 +1,48 @@
-# Plan de implementación — Bouncer
+# Implementation plan — Bouncer
 
-Este documento es el plan de ejecución concreto para implementar el proyecto descrito en
-[`CLAUDE.md`](CLAUDE.md) (la especificación de referencia). Está pensado para que lo revises y
-apruebes antes de que empiece la implementación. No se ha escrito código todavía.
+This document is the concrete execution plan for implementing the project described in
+[`CLAUDE.md`](CLAUDE.md) (the reference specification). It was reviewed and approved before
+implementation started, and the text below is kept as it was approved.
 
-Si algo acá propone una decisión técnica no cubierta explícitamente por la especificación, está
-marcado como **"a confirmar"** — se puede aceptar la propuesta tal cual o pedir un cambio antes de
-arrancar.
+If anything here proposes a technical decision that the specification does not explicitly cover, it
+is marked **"to be confirmed"** — those proposals were accepted or adjusted before the phase that
+needed them.
+
+## Status
+
+| Phase | Status |
+|---|---|
+| 1 — Backend core | Done |
+| 2 — Unit tests | Done |
+| 3 — `shared` module | Done |
+| 4 — Android | Done |
+| 5 — Web | Done |
+| 6 — Demo script verification + README | Done |
+
+All six phases are complete: the implementation and the 8 demo script scenarios have been verified.
 
 ---
 
-## 1. Objetivo
+## 1. Goal
 
-Construir, en un monorepo Gradle/Kotlin Multiplatform, un backend Ktor y dos clientes (Android y
-Web) que demuestren RBAC, autorización a nivel de objeto, mínimo privilegio y vida limitada de
-tokens, con un módulo `shared` reutilizable y una base preparada para un futuro reemplazo del login
-por OAuth2/OIDC. El dominio de "orders" es solo el vehículo; no se agrega funcionalidad de negocio
-no pedida.
+Build, in a Gradle/Kotlin Multiplatform monorepo, a Ktor backend and two clients (Android and Web)
+that demonstrate RBAC, object-level authorization, least privilege and short-lived tokens, with a
+reusable `shared` module and a base prepared for a future replacement of the login with
+OAuth2/OIDC. The "orders" domain is only the vehicle; no business functionality beyond what was
+asked for is added.
 
-## 2. Layout de módulos propuesto (Gradle)
+## 2. Proposed module layout (Gradle)
 
 ```
 bouncer/
 ├── settings.gradle.kts
 ├── build.gradle.kts
 ├── gradle/libs.versions.toml
-├── backend/                         (módulo JVM puro, Ktor server)
+├── backend/                         (pure JVM module, Ktor server)
 │   └── src/main/kotlin/dev/example/bouncer/backend/...
-├── shared/                          (módulo KMP: commonMain + androidMain + jvmMain + wasmJsMain/jsMain)
+├── shared/                          (KMP module: commonMain + androidMain + jvmMain + wasmJsMain/jsMain)
 │   └── src/.../dev/example/bouncer/shared/...
-├── android/                         (app Android, Compose)
+├── android/                         (Android app, Compose)
 │   └── src/main/kotlin/dev/example/bouncer/android/...
 ├── web/                             (Compose Multiplatform for Web)
 │   └── src/.../dev/example/bouncer/web/...
@@ -38,125 +51,125 @@ bouncer/
 └── README.md
 ```
 
-**Paquete base:** `dev.example.bouncer` (confirmado).
+**Base package:** `dev.example.bouncer` (confirmed).
 
-`shared` declara los targets `jvm` (consumido por `backend`), `android` y el target web elegido en
-el spike de la Fase 5 (`wasmJs` o `js`). `backend`, `android` y `web` dependen de `shared`; nunca al
-revés.
+`shared` declares the `jvm` target (consumed by `backend`), `android`, and the web target chosen in
+the Phase 5 spike (`wasmJs` or `js`). `backend`, `android` and `web` depend on `shared`; never the
+other way around.
 
-## 3. Convenciones de nombres (confirmado)
+## 3. Naming conventions (confirmed)
 
-- **Todo en inglés:** entidades de dominio, campos, enums y rutas HTTP. No queda nada en español en
-  el código, aunque parte de la conversación de planificación haya sido en español.
-  - Entidades: `User`, `Item`, `Order`, `Customer`.
-  - Campos: `name`, `price`, `customerId`, `lines`, `quantity`, `status`, `createdAt`.
-  - Enum de estado de orden: `PENDING` / `DISPATCHED` / `CANCELLED`. Enum de rol (ya estaba en
-    inglés en la especificación): `CUSTOMER` / `DISPATCHER` / `ADMIN`.
-  - Rutas: sustantivos en inglés — `/items`, `/orders`, `/customers` (ver sección 5).
+- **Everything in English:** domain entities, fields, enums and HTTP routes. Nothing is left in
+  Spanish in the code, even though part of the planning conversation was in Spanish.
+  - Entities: `User`, `Item`, `Order`, `Customer`.
+  - Fields: `name`, `price`, `customerId`, `lines`, `quantity`, `status`, `createdAt`.
+  - Order status enum: `PENDING` / `DISPATCHED` / `CANCELLED`. Role enum (already in English in
+    the specification): `CUSTOMER` / `DISPATCHER` / `ADMIN`.
+  - Routes: English nouns — `/items`, `/orders`, `/customers` (see section 5).
 
-## 4. Decisiones técnicas propuestas (a confirmar)
+## 4. Proposed technical decisions (to be confirmed)
 
-La especificación fija el *qué* (RS256, BCrypt, Koin, kotlinx.serialization, patrón LCE, etc.) pero
-no siempre la librería concreta. Propongo:
+The specification fixes the *what* (RS256, BCrypt, Koin, kotlinx.serialization, the LCE pattern,
+etc.) but not always the concrete library. Proposal:
 
-| Decisión | Propuesta | Motivo |
+| Decision | Proposal | Reason |
 |---|---|---|
-| Motor del servidor Ktor | `ktor-server-netty` | Estándar, bien documentado |
-| Librería JWT (RS256 + JWKS) | `com.nimbusds:nimbus-jose-jwt` | Soporte nativo de JWK/JWKS, evita construir el endpoint `/.well-known/jwks.json` a mano |
-| Librería BCrypt | `at.favre.lib:bcrypt` | Implementación activa y mantenida |
-| Generación de OpenAPI + Swagger UI | `io.github.smiley4:ktor-swagger-ui` | Deriva el spec desde las rutas Ktor (cumple "no YAML a mano"), expone Swagger UI |
-| Formato de error HTTP | `{ "error": "<ErrorType>", "message": "<texto>" }`, con `<ErrorType>` igual a los valores de `enum ErrorType` (`UNAUTHORIZED`, `FORBIDDEN`, `NETWORK`, `UNKNOWN`) salvo `NETWORK` que no aplica server-side | Mapeo directo y sin ambigüedad a `UiState.Error` en los clientes |
-| Versiones de Kotlin/Ktor/Compose Multiplatform/Koin/kotlinx.* | Últimas estables al momento de implementar, pineadas en `libs.versions.toml` | Pedido explícito del plan |
+| Ktor server engine | `ktor-server-netty` | Standard, well documented |
+| JWT library (RS256 + JWKS) | `com.nimbusds:nimbus-jose-jwt` | Native JWK/JWKS support, avoids building the `/.well-known/jwks.json` endpoint by hand |
+| BCrypt library | `at.favre.lib:bcrypt` | Actively maintained implementation |
+| OpenAPI generation + Swagger UI | `io.github.smiley4:ktor-swagger-ui` | Derives the spec from the Ktor routes (meets "no hand-written YAML"), exposes Swagger UI |
+| HTTP error format | `{ "error": "<ErrorType>", "message": "<text>" }`, with `<ErrorType>` equal to the values of `enum ErrorType` (`UNAUTHORIZED`, `FORBIDDEN`, `NETWORK`, `UNKNOWN`) except `NETWORK`, which does not apply server-side | Direct, unambiguous mapping to `UiState.Error` in the clients |
+| Kotlin/Ktor/Compose Multiplatform/Koin/kotlinx.* versions | Latest stable at implementation time, pinned in `libs.versions.toml` | Explicit request in the plan |
 
-Si no hay objeciones, estas se toman como definitivas al implementar la Fase 1.
+If there are no objections, these are taken as final when implementing Phase 1.
 
-## 5. Decisiones ya confirmadas
+## 5. Decisions already confirmed
 
-1. **`GET /orders/{id}` entre clientes distintos (escenario 2 del guion de demo):** responde **403
-   Forbidden** (no 404).
-2. **Alcance de gestión de clientes e ítems:** se mantiene deliberadamente mínimo, para no desviar el
-   foco de authn/authz. `ADMIN` puede listar clientes (`GET /customers`) y ver sus órdenes a través
-   del `GET /orders` existente (que ya devuelve todas las órdenes para ADMIN/DISPATCHER, incluyendo
-   `customerId`). No se agrega ABM de clientes (sin `POST/PUT/DELETE /customers`). Los ítems se
-   quedan exactamente con el CRUD ya listado en la sección 6 (no se agrega nada adicional — ni acá
-   ni en ningún otro lado se amplía alcance de negocio).
+1. **`GET /orders/{id}` across different customers (demo script scenario 2):** responds **403
+   Forbidden** (not 404).
+2. **Scope of customer and item management:** deliberately kept minimal, so as not to divert the
+   focus from authn/authz. `ADMIN` can list customers (`GET /customers`) and see their orders
+   through the existing `GET /orders` (which already returns every order for ADMIN/DISPATCHER,
+   including `customerId`). No customer CRUD is added (no `POST/PUT/DELETE /customers`). Items stay
+   with exactly the CRUD already listed in section 6 (nothing additional is added — neither here
+   nor anywhere else is the business scope widened).
 
-## 6. Pantallas por cliente (derivado de la restricción de `client_type`)
+## 6. Screens per client (derived from the `client_type` restriction)
 
-Como `DISPATCHER` solo puede loguearse con `client_type=android` y `ADMIN` solo con `web`, las
-pantallas quedan así (ningún cliente implementa una pantalla para un rol que no puede loguearse ahí):
+Since `DISPATCHER` can only log in with `client_type=android` and `ADMIN` only with `web`, the
+screens are as follows (no client implements a screen for a role that cannot log in there):
 
-- **Android:** login → catálogo de ítems (CUSTOMER + DISPATCHER) → órdenes propias + crear/cancelar
-  orden (CUSTOMER) → lista de todas las órdenes + marcar como despachada (DISPATCHER).
-- **Web:** login → catálogo de ítems (CUSTOMER + ADMIN) → órdenes propias + crear/cancelar orden
-  (CUSTOMER) → CRUD de ítems + todas las órdenes + crear orden a nombre de otro + cancelar
-  cualquier orden + listado de clientes (ADMIN).
+- **Android:** login → item catalog (CUSTOMER + DISPATCHER) → own orders + create/cancel order
+  (CUSTOMER) → list of all orders + mark as dispatched (DISPATCHER).
+- **Web:** login → item catalog (CUSTOMER + ADMIN) → own orders + create/cancel order (CUSTOMER) →
+  item CRUD + all orders + create an order on behalf of someone else + cancel any order + customer
+  list (ADMIN).
 
-## 7. Fases de implementación
+## 7. Implementation phases
 
-Cada fase termina con una verificación concreta antes de pasar a la siguiente (tests, levantar el
-backend, compilar). No se avanza a la fase N+1 sin confirmar que la fase N quedó verificada.
+Each phase ends with a concrete verification before moving on to the next (tests, starting the
+backend, compiling). Phase N+1 does not start without confirming that phase N was verified.
 
-### Fase 1 — Backend core
-- Setup Gradle multi-módulo + `libs.versions.toml`.
-- Modelo en memoria (`User`, `Item`, `Order`) + seed al arrancar.
-- BCrypt para passwords; generación de par de claves RSA al arrancar (en memoria, no persistida).
-- JWT RS256 (access, 5 min) + refresh opaco con rotación (10 min) + endpoint JWKS.
-- Dominio: `AuthenticateUserUseCase`, `RefreshSessionUseCase`, `LogoutUseCase`, `PolicyDecisionPoint`.
-- `PolicyEnforcementPoint` como plugin/interceptor Ktor; repositorios en memoria sobre interfaces de dominio.
-- Endpoints de `/auth/*`, `/me`, `/items`, `/orders`, `/customers` según la tabla de la sección 5 de `CLAUDE.md`.
-- OpenAPI autogenerado + Swagger UI.
-- **Verificación:** el backend levanta, `GET /.well-known/jwks.json` responde, login + endpoints protegidos funcionan manualmente (curl/Swagger).
+### Phase 1 — Backend core
+- Multi-module Gradle setup + `libs.versions.toml`.
+- In-memory model (`User`, `Item`, `Order`) + seed at startup.
+- BCrypt for passwords; RSA key pair generated at startup (in memory, not persisted).
+- JWT RS256 (access, 5 min) + opaque refresh token with rotation (10 min) + JWKS endpoint.
+- Domain: `AuthenticateUserUseCase`, `RefreshSessionUseCase`, `LogoutUseCase`, `PolicyDecisionPoint`.
+- `PolicyEnforcementPoint` as a Ktor plugin/interceptor; in-memory repositories over domain interfaces.
+- `/auth/*`, `/me`, `/items`, `/orders`, `/customers` endpoints according to the table in section 5 of `CLAUDE.md`.
+- Auto-generated OpenAPI + Swagger UI.
+- **Verification:** the backend starts, `GET /.well-known/jwks.json` responds, login + protected endpoints work manually (curl/Swagger).
 
-### Fase 2 — Tests unitarios
-- Test de `PolicyDecisionPoint`/caso de uso para BOLA (CUSTOMER no puede ver/cancelar una orden ajena).
-- Test de validación de `client_type` en `AuthenticateUserUseCase` (login rechazado si el rol no corresponde al `client_type`).
-- **Verificación:** ambos tests corren y pasan (`./gradlew :shared:test` o el módulo que corresponda).
+### Phase 2 — Unit tests
+- Test of `PolicyDecisionPoint`/use case for BOLA (a CUSTOMER cannot view/cancel someone else's order).
+- Test of `client_type` validation in `AuthenticateUserUseCase` (login rejected if the role does not match the `client_type`).
+- **Verification:** both tests run and pass (`./gradlew :shared:test` or the relevant module).
 
-### Fase 3 — Módulo `shared`
-- DTOs (`kotlinx.serialization`) espejo de los endpoints.
-- Cliente HTTP (Ktor client) con refresh automático transparente ante 401 por expiración.
-- ViewModel base (`CoroutineScope` + `StateFlow`, sin `androidx.lifecycle`).
-- `UiState`/`ErrorType` tal como en la sección 6 de `CLAUDE.md`.
-- **Verificación:** `shared` compila para los tres targets (jvm, android, web) y el cliente HTTP se puede probar contra el backend de la Fase 1.
+### Phase 3 — `shared` module
+- DTOs (`kotlinx.serialization`) mirroring the endpoints.
+- HTTP client (Ktor client) with transparent automatic refresh on a 401 caused by expiration.
+- Base ViewModel (`CoroutineScope` + `StateFlow`, no `androidx.lifecycle`).
+- `UiState`/`ErrorType` exactly as in section 6 of `CLAUDE.md`.
+- **Verification:** `shared` compiles for the three targets (jvm, android, web) and the HTTP client can be tried against the Phase 1 backend.
 
-### Fase 4 — Android
-- Koin (`koin-android`), pantallas de login, catálogo, órdenes (CUSTOMER) y despacho (DISPATCHER) — ver sección 6.
-- Guardado del refresh token en Keystore (`minSdk 29`, `setUserAuthenticationRequired(true)`, sin ventana de tiempo) + desbloqueo biométrico antes de usarlo.
-- **Verificación:** la app corre en un emulador/dispositivo, login funciona para CUSTOMER y DISPATCHER, el escenario 7 del guion de demo es reproducible.
+### Phase 4 — Android
+- Koin (`koin-android`), login, catalog, orders (CUSTOMER) and dispatch (DISPATCHER) screens — see section 6.
+- Refresh token stored in the Keystore (`minSdk 29`, `setUserAuthenticationRequired(true)`, no time window) + biometric unlock before using it.
+- **Verification:** the app runs on an emulator/device, login works for CUSTOMER and DISPATCHER, demo script scenario 7 is reproducible.
 
-### Fase 5 — Web
-- **Spike primero** (Compose + Koin + cliente Ktor en el target web elegido) — reporto el resultado antes de construir ninguna pantalla.
-- Pantallas de login, catálogo, órdenes (CUSTOMER) y administración (ADMIN) — ver sección 6.
-- **Verificación:** la app corre en el navegador, login funciona para CUSTOMER y ADMIN.
+### Phase 5 — Web
+- **Spike first** (Compose + Koin + Ktor client on the chosen web target) — I report the result before building any screen.
+- Login, catalog, orders (CUSTOMER) and administration (ADMIN) screens — see section 6.
+- **Verification:** the app runs in the browser, login works for CUSTOMER and ADMIN.
 
-### Fase 6 — Verificación del guion de demo + README
-- Reproducir y documentar los 8 escenarios de la sección 8 de `CLAUDE.md` (ver mapeo abajo).
-- Redactar `README.md` raíz con instrucciones para levantar backend, Android y Web, y los pasos exactos de cada escenario.
-- **Verificación:** cada uno de los 8 escenarios se ejecuta siguiendo el README tal cual está escrito, sin pasos implícitos.
+### Phase 6 — Demo script verification + README
+- Reproduce and document the 8 scenarios of section 8 of `CLAUDE.md` (see the mapping below).
+- Write the root `README.md` with instructions to start the backend, Android and Web, and the exact steps of each scenario.
+- **Verification:** each of the 8 scenarios is executed following the README exactly as written, with no implicit steps.
 
-## 8. Mapeo escenario de demo → cómo se verifica
+## 8. Demo scenario → how it is verified
 
-| # | Escenario | Cómo se reproduce |
+| # | Scenario | How it is reproduced |
 |---|---|---|
-| 1 | Expiración/refresh de tokens | Login por curl/Swagger o app; esperar >5 min y hacer una request protegida (refresh transparente); esperar >10 min y repetir (debe exigir login) |
-| 2 | BOLA en `GET /orders/{id}` | Login como Cliente A, pedir el `id` de una orden de Cliente B (conocido de la seed) |
-| 3 | CUSTOMER llama `PATCH /orders/{id}/status` | curl directo con token de CUSTOMER |
-| 4 | ADMIN llama `PATCH /orders/{id}/status` | curl directo con token de ADMIN |
-| 5 | Login de DISPATCHER con `client_type=web` | curl/Swagger a `/auth/login` con email del DISPATCHER y `client_type: "web"` |
-| 6 | Logout revoca refresh | `POST /auth/logout` y luego `POST /auth/refresh` con el mismo token |
-| 7 | Sesión Android sin biometría | Guardar sesión, forzar cierre de la app, reabrir e intentar sin pasar el prompt biométrico |
-| 8 | JWKS disponible desde el arranque | `GET /.well-known/jwks.json` apenas levanta el backend |
+| 1 | Token expiration/refresh | Log in via curl/Swagger or the app; wait >5 min and make a protected request (transparent refresh); wait >10 min and repeat (must require login) |
+| 2 | BOLA on `GET /orders/{id}` | Log in as Customer A, request the `id` of one of Customer B's orders (known from the seed) |
+| 3 | CUSTOMER calls `PATCH /orders/{id}/status` | Direct curl with a CUSTOMER token |
+| 4 | ADMIN calls `PATCH /orders/{id}/status` | Direct curl with an ADMIN token |
+| 5 | DISPATCHER login with `client_type=web` | curl/Swagger to `/auth/login` with the DISPATCHER's email and `client_type: "web"` |
+| 6 | Logout revokes refresh | `POST /auth/logout` and then `POST /auth/refresh` with the same token |
+| 7 | Android session without biometrics | Save a session, force-close the app, reopen it and try without passing the biometric prompt |
+| 8 | JWKS available from startup | `GET /.well-known/jwks.json` right after the backend starts |
 
-## 9. Checklist de aceptación final
+## 9. Final acceptance checklist
 
-- [ ] Código fuente completo de `backend`, `shared`, `android`, `web`.
-- [ ] Tests unitarios de BOLA y de validación de `client_type` (Fase 2).
-- [ ] `README.md` raíz con instrucciones de arranque y los 8 escenarios reproducibles paso a paso.
-- [ ] Nombres de dominio explícitos (`PolicyEnforcementPoint`, `PolicyDecisionPoint`, los tres casos de uso de auth) presentes en el código, no lógica dispersa sin nombre.
-- [ ] Nada de la lista de exclusiones de la sección 1 de `CLAUDE.md` fue implementado.
+- [ ] Complete source code for `backend`, `shared`, `android`, `web`.
+- [ ] Unit tests for BOLA and `client_type` validation (Phase 2).
+- [ ] Root `README.md` with startup instructions and the 8 scenarios reproducible step by step.
+- [ ] Explicit domain names (`PolicyEnforcementPoint`, `PolicyDecisionPoint`, the three auth use cases) present in the code, not unnamed scattered logic.
+- [ ] Nothing from the exclusion list in section 1 of `CLAUDE.md` was implemented.
 
 ---
 
-**Para aprobar este plan:** avisame si querés cambiar algo de las secciones 2 o 4 (decisiones
-técnicas propuestas). Con tu confirmación arranco la Fase 1.
+**To approve this plan:** let me know if you want to change anything in sections 2 or 4 (proposed
+technical decisions). With your confirmation I start Phase 1.

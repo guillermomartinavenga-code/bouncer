@@ -15,8 +15,8 @@ not a goal in itself. Do not add business functionality beyond what is specified
 
 ## Current state
 
-Phases 1–5 of `PLAN.md` are implemented (backend, shared, tests, Android app, web app). Still to do:
-the README with the demo-script walkthrough (Phase 6). The plan below remains the reference spec.
+All phases of `PLAN.md` are done (backend, shared, tests, Android app, web app, and the verification of
+the 8 demo scenarios). The plan below remains the reference spec.
 
 Commands (Gradle wrapper; Android builds need `ANDROID_HOME=$HOME/Android/Sdk`, or a
 `local.properties` with `sdk.dir`, which IntelliJ creates and git ignores):
@@ -25,8 +25,7 @@ Commands (Gradle wrapper; Android builds need `ANDROID_HOME=$HOME/Android/Sdk`, 
 ./gradlew :backend:run                 # backend on http://localhost:8080 (Swagger UI at /swagger)
 ./gradlew :shared:jvmTest              # unit tests (BOLA, client_type, HTTP-client refresh)
 ./gradlew :shared:jvmTest --tests "*PolicyDecisionPointTest"   # a single test class
-./gradlew :android:assembleDebug       # Android APK; the emulator reaches the backend at 10.0.2.2:8080
-                                       # (physical device: adb reverse tcp:8080 tcp:8080 + -Pbouncer.backendUrl=http://localhost:8080)
+./gradlew :android:assembleDebug       # Android APK (backend URL is picked at runtime, see "Layout notes")
 ./gradlew :web:wasmJsBrowserDevelopmentRun   # web app on http://localhost:8081 (needs the backend on :8080)
 ./gradlew build                        # everything
 ```
@@ -45,6 +44,15 @@ Layout notes that aren't obvious from a single file:
   kotlinx-io (via Ktor) reads a bare `import.meta` that breaks under webpack's default `eval` devtool.
 - Android ViewModels (the web ones too) are plain objects owned by Compose (`rememberViewModel`), not androidx
   ViewModels; the activity opts out of recreation via `configChanges` for that reason.
+- The Android app picks the backend URL at runtime (`BackendUrl`): `10.0.2.2:8080` on an emulator,
+  `localhost:8080` on a physical device, which only works after `adb reverse tcp:8080 tcp:8080` (the
+  reverse is lost on reboot/unplug). `localhost` is the only non-emulator host the network security
+  config allows in cleartext. `-Pbouncer.backendUrl=...` overrides the detection (`BuildConfig.BACKEND_URL_OVERRIDE`);
+  any other host also needs a cleartext entry in `network_security_config.xml`.
+- Both clients log traffic and session events through `ClientLogger` (Logcat tag `Bouncer`, debug builds
+  only, on Android; browser console on web). The logs print whole tokens by design, so never wire a real
+  logger into release builds. The backend logs requests (duration, principal), rejections with their reason, and
+  login/refresh/logout events, never full tokens.
 - The Android app keeps only the refresh token on disk, encrypted with an auth-required Keystore
   RSA key: encrypting uses the public key (no prompt), decrypting needs a biometric prompt.
   Testing it on an emulator requires a screen lock (PIN) and an enrolled fingerprint.
@@ -233,7 +241,7 @@ enum class ErrorType { UNAUTHORIZED, FORBIDDEN, NETWORK, UNKNOWN }
 - Customer and item management are deliberately minimal (see the note under the role/permission
   matrix) — no customer CRUD beyond `GET /customers`.
 
-## Demo script (acceptance criteria — document how to reproduce each in the README)
+## Demo script (acceptance criteria — document how to reproduce each)
 
 | # | Scenario | Expected result |
 |---|---|---|
@@ -261,6 +269,6 @@ enum class ErrorType { UNAUTHORIZED, FORBIDDEN, NETWORK, UNKNOWN }
 
 - Full, working source for all four modules (`backend`, `shared`, `android`, `web`).
 - Unit tests for the two use cases above (BOLA, `client_type` validation).
-- Root `README.md` covering: how to run the backend, the Android app, and the web app; and, per
-  demo scenario, the exact reproduction steps (curl command or Swagger UI, and/or app action) and
+- Root `README.md` covering how to run the backend, the Android app, and the web app.
+- Per demo scenario, the exact reproduction steps (curl command or Swagger UI, and/or app action) and
   the expected result.

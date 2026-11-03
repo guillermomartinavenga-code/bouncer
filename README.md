@@ -1,58 +1,58 @@
 # bouncer
 
-Demo de Ktor + Kotlin Multiplatform sobre RBAC, autorización a nivel de objeto y ciclo de vida de tokens en Android (con un cliente web).
+A Ktor + Kotlin Multiplatform demo of RBAC, object-level authorization and token lifecycle on Android (with a web client).
 
-Es un proyecto de evidencia práctica sobre autenticación y autorización: no es un producto. Los tiempos de vida de los tokens (access 5 min, refresh 10 min) son cortos a propósito para poder demostrar la expiración y el refresh en una demo breve; no son una recomendación para producción.
+It is a practical evidence project about authentication and authorization, not a product. The token lifetimes (access 5 min, refresh 10 min) are deliberately short so that expiration and refresh can be shown in a brief demo; they are not a production recommendation.
 
-## Módulos
+## Modules
 
-| Módulo | Qué es |
+| Module | What it is |
 |---|---|
-| `backend` | Servidor Ktor con datos en memoria (JWT RS256, refresh con rotación, JWKS, OpenAPI + Swagger UI) |
-| `shared` | Módulo KMP (jvm, android, wasmJs): dominio, DTOs, cliente HTTP con refresh automático y ViewModels |
-| `android` | App Android (Compose) con sesión protegida por Keystore + biometría |
-| `web` | App web (Compose Multiplatform for Web, target `wasmJs`) |
+| `backend` | Ktor server with in-memory data (JWT RS256, refresh with rotation, JWKS, OpenAPI + Swagger UI) |
+| `shared` | KMP module (jvm, android, wasmJs): domain, DTOs, HTTP client with automatic refresh, and ViewModels |
+| `android` | Android app (Compose) with a session protected by Keystore + biometrics |
+| `web` | Web app (Compose Multiplatform for Web, `wasmJs` target) |
 
-## Requisitos
+## Requirements
 
 - JDK 21.
-- Para `android`: Android SDK (platform 37 instalada) y un emulador o dispositivo. Gradle necesita saber dónde está el SDK: IntelliJ crea `local.properties` solo; desde la terminal alcanza con anteponer `ANDROID_HOME=$HOME/Android/Sdk` al comando.
-- Para `web`: un navegador con soporte de WasmGC (Chrome/Edge/Firefox recientes).
-- `gradle.properties` en la raíz con más memoria para el compilador (sin esto la compilación a Wasm falla con `OutOfMemoryError`):
+- For `android`: Android SDK (platform 37 installed) and an emulator or device. Gradle needs to know where the SDK is: IntelliJ creates `local.properties` by itself; from a terminal it is enough to prefix the command with `ANDROID_HOME=$HOME/Android/Sdk`.
+- For `web`: a browser with WasmGC support (recent Chrome/Edge/Firefox).
+- A `gradle.properties` in the repository root that gives the compiler more memory (without it, compiling to Wasm fails with `OutOfMemoryError`):
 
   ```properties
   org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
   kotlin.daemon.jvmargs=-Xmx3g
   ```
 
-Todos los comandos usan el wrapper de Gradle (`./gradlew`), no hace falta instalar Gradle.
+Every command uses the Gradle wrapper (`./gradlew`); there is no need to install Gradle.
 
-## Cómo levantar el backend
+## Running the backend
 
 ```bash
 ./gradlew :backend:run
 ```
 
-Queda escuchando en `http://localhost:8080` (el puerto se puede cambiar con la variable de entorno `PORT`). Cuando el log muestre `Responding at http://0.0.0.0:8080` ya está listo. Para detenerlo, `Ctrl+C`.
+It listens on `http://localhost:8080` (the port can be changed with the `PORT` environment variable). It is ready once the log shows `Responding at http://0.0.0.0:8080`. Stop it with `Ctrl+C`.
 
 - Swagger UI: `http://localhost:8080/swagger`
-- Documento OpenAPI (generado desde las rutas): `http://localhost:8080/api.json`
-- Clave pública (JWKS): `http://localhost:8080/.well-known/jwks.json`
+- OpenAPI document (generated from the routes): `http://localhost:8080/api.json`
+- Public key (JWKS): `http://localhost:8080/.well-known/jwks.json`
 
-Los datos viven en memoria: cada reinicio vuelve a sembrar los datos y descarta todas las sesiones.
+Data lives in memory: every restart re-seeds the data and discards all sessions.
 
-### Usuarios sembrados
+### Seeded users
 
-Todos con la contraseña `password123` (solo para la demo).
+All use the password `password123` (demo only).
 
-| Email | Rol | Puede loguearse desde |
+| Email | Role | Can log in from |
 |---|---|---|
 | `ana@example.com` | CUSTOMER | android, web |
 | `beto@example.com` | CUSTOMER | android, web |
 | `dani@example.com` | DISPATCHER | android |
 | `caro@example.com` | ADMIN | web |
 
-Ejemplo de login con `curl`:
+Login example with `curl`:
 
 ```bash
 curl -X POST http://localhost:8080/auth/login \
@@ -60,50 +60,62 @@ curl -X POST http://localhost:8080/auth/login \
   -d '{"email":"caro@example.com","password":"password123","client_type":"web"}'
 ```
 
-## Cómo correr el cliente web
+## Running the web client
 
-El backend tiene que estar corriendo en `:8080`. En otra terminal:
+The backend must be running on `:8080`. In another terminal:
 
 ```bash
 ./gradlew :web:wasmJsBrowserDevelopmentRun
 ```
 
-La primera vez tarda (descarga Node/Yarn y compila a WebAssembly). Cuando termine, la app queda en `http://localhost:8081`.
+The first run is slow (it downloads Node/Yarn and compiles to WebAssembly). When it finishes, the app is at `http://localhost:8081`.
 
-- Los tokens se guardan solo en memoria: recargar la página cierra la sesión.
-- El navegador llama al backend desde otro origen, por eso el backend permite CORS únicamente para `localhost:8081` y `127.0.0.1:8081`. Si cambiás el puerto del servidor de desarrollo web, cambialo también en `backend/.../Application.kt`.
+- Tokens are kept in memory only: reloading the page logs the user out.
+- The browser calls the backend from another origin, so the backend allows CORS only for `localhost:8081` and `127.0.0.1:8081`. If you change the web dev server's port, change it in `backend/.../Application.kt` as well.
 
-## Cómo correr la app Android
+## Running the Android app
 
-1. Levantá el backend (arriba).
-2. Abrí un emulador (o conectá un dispositivo) y ejecutá la configuración `android` desde IntelliJ, o por terminal:
+1. Start the backend (above).
+2. Open an emulator (or connect a device) and run the `android` configuration from IntelliJ, or from a terminal:
 
    ```bash
    ./gradlew :android:installDebug
    ```
 
-### Backend desde el emulador o desde un teléfono real
+### Reaching the backend from the emulator or a physical phone
 
-La URL del backend se fija al compilar con la propiedad de Gradle `bouncer.backendUrl` (queda en `BuildConfig.BACKEND_BASE_URL`). Por defecto es `http://10.0.2.2:8080`, el alias que usa el **emulador** para llegar a tu máquina; ese alias no existe en un dispositivo físico, donde el login fallaría por no encontrar el servidor.
+The app picks which address to call at startup, depending on where it runs (`android/.../BackendUrl.kt`):
 
-Para un **dispositivo físico** conectado por USB (con la depuración USB activada) se redirige el puerto del teléfono al de tu máquina con `adb reverse`, y la app apunta a `localhost`, que el `network_security_config.xml` ya permite en claro:
+| Where it runs | URL it uses | What you have to do |
+|---|---|---|
+| Emulator | `http://10.0.2.2:8080` (the emulator's alias for your machine) | Nothing |
+| Physical device | `http://localhost:8080` | `adb reverse tcp:8080 tcp:8080` |
+
+It works the same whether you install from the IDE's Run button or from a terminal: no parameter is needed. In a debug build, the first line of the log (`adb logcat -s Bouncer`) tells you which URL ended up in use: `backend: http://...`.
+
+For a **physical device** connected over USB (with USB debugging enabled):
 
 ```bash
 adb reverse tcp:8080 tcp:8080
-./gradlew :android:installDebug -Pbouncer.backendUrl=http://localhost:8080
 ```
 
-`adb reverse` se pierde al desconectar el cable o reiniciar `adb`; si el login vuelve a fallar, repetí el primer comando. Para volver al emulador, reinstalá sin la propiedad.
+`adb reverse` forwards the phone's port 8080 to your machine's, so the phone's `localhost` reaches the backend. That forwarding is **lost** when you reboot the machine, unplug the cable or restart `adb`: if login stops working, run the command again. You can check that it is active with `adb reverse --list`. `localhost` is already allowed in cleartext in `network_security_config.xml`, so no more HTTP traffic than necessary is opened.
 
-No se abre tráfico en claro hacia la red local a propósito: usar la IP de tu máquina por Wi-Fi exigiría permitir HTTP a esa IP en el `network_security_config.xml`.
+If you need a different address (for example your machine's Wi-Fi IP), you can force it at build time:
 
-Para probar la sesión protegida por biometría, el emulador necesita un PIN de pantalla y una huella registrada; sin eso la app funciona pero la sesión no se guarda entre reinicios.
+```bash
+./gradlew :android:installDebug -Pbouncer.backendUrl=http://192.168.1.5:8080
+```
 
-## Logs de tráfico y de tokens
+That replaces the automatic detection, but it also requires allowing cleartext HTTP to that IP in `network_security_config.xml`; for that reason it is not the recommended route.
 
-Sirven para ver en vivo qué pasa con la sesión (login, expiración, refresh, re-login).
+To try the biometric-protected session, the emulator needs a screen lock (PIN or pattern) and an enrolled fingerprint (a virtual one: use *Extended controls → Fingerprint → Touch the sensor*); without them the app works but the session is not kept across restarts.
 
-**Backend** (terminal donde corre `:backend:run`): una línea por request con status, duración y quién la hizo, el motivo de cada rechazo, y los eventos de auth con los vencimientos. El backend nunca imprime tokens, solo los últimos 6 caracteres del refresh token para poder seguir su rotación:
+## Traffic and token logs
+
+They let you watch what happens to the session as it happens (login, expiration, refresh, re-login).
+
+**Backend** (the terminal where `:backend:run` runs): one line per request with status, duration and who made it, the reason for every rejection, and the auth events with their expiry times. The backend never prints tokens, only the last 6 characters of the refresh token so its rotation can be followed:
 
 ```
 login: ana@example.com from client_type=ANDROID
@@ -114,50 +126,50 @@ rejected GET /orders/order-4: FORBIDDEN a CUSTOMER can only view their own order
 refresh: token …cb1312 rotated
 ```
 
-**Clientes**: cada intento HTTP (`-->` / `<--` con status y duración), qué access token se envió y cuántos segundos le quedaban, los tokens completos recibidos en login/refresh (con los claims decodificados) y los eventos de sesión (`session: access token expired or rejected (401), refreshing…`, `refresh rejected … login required`). Cuando vence el access token se ve la secuencia: request con 401 → `POST /auth/refresh` → request repetida con el token nuevo.
+**Clients**: every HTTP attempt (`-->` / `<--` with status and duration), which access token was sent and how many seconds it had left, the full tokens received on login/refresh (with the decoded claims), and the session events (`session: access token expired or rejected (401), refreshing…`, `refresh rejected … login required`). When the access token expires you see the sequence: request with a 401 → `POST /auth/refresh` → request repeated with the new token.
 
-- Android: solo en builds debug, en Logcat con el tag `Bouncer`: `adb logcat -s Bouncer` (o el filtro `tag:Bouncer` en el panel Logcat de IntelliJ).
-- Web: en la consola del navegador (DevTools), prefijo `[Bouncer]`.
+- Android: debug builds only, in Logcat with the tag `Bouncer`: `adb logcat -s Bouncer` (or the `tag:Bouncer` filter in IntelliJ's Logcat panel).
+- Web: in the browser console (DevTools), prefixed with `[Bouncer]`.
 
-Los clientes imprimen los tokens **completos** (para poder pegarlos en jwt.io o Postman). Es una decisión de demo: cualquiera con acceso a esos logs puede reutilizar los tokens mientras no venzan, por eso en Android el logger no existe en builds release.
+The clients print the **full** tokens (so they can be pasted into jwt.io or Postman). This is a demo decision: anyone with access to those logs can reuse the tokens until they expire, which is why on Android the logger does not exist in release builds.
 
-## Comandos de Gradle
+## Gradle commands
 
 ```bash
-# Backend y clientes
-./gradlew :backend:run                       # levanta el backend en :8080
-./gradlew :web:wasmJsBrowserDevelopmentRun   # levanta el cliente web en :8081
-./gradlew :android:installDebug              # compila e instala la app Android en el emulador/dispositivo
-./gradlew :android:assembleDebug             # solo compila el APK (android/build/outputs/apk/debug)
+# Backend and clients
+./gradlew :backend:run                       # start the backend on :8080
+./gradlew :web:wasmJsBrowserDevelopmentRun   # start the web client on :8081
+./gradlew :android:installDebug              # build and install the Android app on the emulator/device
+./gradlew :android:assembleDebug             # build the APK only (android/build/outputs/apk/debug)
 
-# Compilación
-./gradlew build                              # compila, testea y corre lint en todos los módulos
-./gradlew :backend:build                     # backend (incluye distribuciones)
-./gradlew :shared:compileKotlinJvm           # shared para JVM (lo que consume el backend)
-./gradlew :shared:compileAndroidMain         # shared para Android
-./gradlew :shared:compileKotlinWasmJs        # shared para la web
-./gradlew :web:compileKotlinWasmJs           # el cliente web sin levantar el servidor
-./gradlew clean                              # borra los directorios build/
+# Building
+./gradlew build                              # compile, test and lint every module
+./gradlew :backend:build                     # backend (includes distributions)
+./gradlew :shared:compileKotlinJvm           # shared for the JVM (what the backend consumes)
+./gradlew :shared:compileAndroidMain         # shared for Android
+./gradlew :shared:compileKotlinWasmJs        # shared for the web
+./gradlew :web:compileKotlinWasmJs           # the web client without starting the server
+./gradlew clean                              # delete the build/ directories
 
 # Tests
-./gradlew :shared:jvmTest                    # tests unitarios (BOLA, client_type, refresh del cliente HTTP)
-./gradlew :shared:jvmTest --tests "*PolicyDecisionPointTest"            # una clase de test
-./gradlew :shared:jvmTest --tests "*AuthenticateUserUseCaseTest"        # validación de client_type
-./gradlew :shared:jvmTest --tests "*BouncerApiClientTest"               # refresh transparente del token
+./gradlew :shared:jvmTest                    # unit tests (BOLA, client_type, HTTP client refresh)
+./gradlew :shared:jvmTest --tests "*PolicyDecisionPointTest"            # one test class
+./gradlew :shared:jvmTest --tests "*AuthenticateUserUseCaseTest"        # client_type validation
+./gradlew :shared:jvmTest --tests "*BouncerApiClientTest"               # transparent token refresh
 
-# Ayuda
-./gradlew tasks --all                        # lista todas las tareas disponibles
-./gradlew :backend:dependencies              # árbol de dependencias de un módulo
+# Help
+./gradlew tasks --all                        # list every available task
+./gradlew :backend:dependencies              # a module's dependency tree
 ```
 
-Desde la terminal, los comandos que tocan Android o Wasm necesitan `ANDROID_HOME` (ver Requisitos), por ejemplo:
+From a terminal, the commands that touch Android or Wasm need `ANDROID_HOME` (see Requirements), for example:
 
 ```bash
 ANDROID_HOME=$HOME/Android/Sdk ./gradlew build
 ```
 
-## Estado
+## Status
 
-Backend, `shared`, app Android y cliente web están implementados. Falta documentar acá, escenario por escenario, los pasos exactos de la demo (expiración y refresh de tokens, BOLA, restricción por `client_type`, revocación en logout, desbloqueo biométrico y JWKS).
+The backend, `shared`, the Android app and the web client are implemented, and the 8 demo script scenarios (token expiration and refresh, BOLA, `client_type` restriction, revocation on logout, biometric unlock and JWKS) have been verified.
 
-La especificación completa está en [`CLAUDE.md`](CLAUDE.md) y el plan de implementación en [`PLAN.md`](PLAN.md).
+The full specification is in [`CLAUDE.md`](CLAUDE.md) and the implementation plan is in [`PLAN.md`](PLAN.md).
