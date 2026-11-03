@@ -1,6 +1,7 @@
 package dev.example.bouncer.android.di
 
 import android.util.Log
+import dev.example.bouncer.android.BackendUrl
 import dev.example.bouncer.android.BuildConfig
 import dev.example.bouncer.android.security.KeystoreTokenStorage
 import dev.example.bouncer.shared.client.BouncerApiClient
@@ -24,7 +25,9 @@ val androidModule = module {
     // Traffic and token logs print whole tokens, so they only exist in debug builds (tag "Bouncer" in Logcat).
     single {
         val logger = if (BuildConfig.DEBUG) ClientLogger { Log.d("Bouncer", it) } else ClientLogger.None
-        BouncerApiClient(BuildConfig.BACKEND_BASE_URL, get<TokenStorage>(), OkHttp.create(), logger)
+        val backendUrl = BackendUrl.resolve()
+        logger.log("backend: $backendUrl")
+        BouncerApiClient(backendUrl, get<TokenStorage>(), OkHttp.create(), logger)
     }
 
     factory { SessionViewModel(get(), CLIENT_TYPE) }
