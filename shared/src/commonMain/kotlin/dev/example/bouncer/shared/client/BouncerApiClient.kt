@@ -42,11 +42,15 @@ import kotlinx.serialization.json.Json
  * A 401 caused by access-token expiry is retried transparently by Ktor's `Auth` plugin (it calls
  * `/auth/refresh` and retries once); if that retry also fails — refresh token also expired or
  * revoked — the original 401 is returned here and mapped to `UiState.Error(UNAUTHORIZED)`.
+ *
+ * [logger] receives one line per HTTP attempt plus the session events (tokens received, access
+ * token rejected → refresh, refresh rejected → login required); it is silent by default.
  */
 class BouncerApiClient(
     private val baseUrl: String,
     private val tokenStorage: TokenStorage,
     engine: HttpClientEngine,
+    private val logger: ClientLogger = ClientLogger.None,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -60,7 +64,11 @@ class BouncerApiClient(
                     if (access != null && refresh != null) BearerTokens(access, refresh) else null
                 }
                 refreshTokens {
-                    val refreshToken = tokenStorage.getRefreshToken() ?: return@refreshTokens null
+                    val refreshToken = tokenStorage.getRefreshToken() ?: run {
+                        logger.log("session: access token rejected and there is no refresh token, login required")
+                        return@refreshTokens null
+                    }
+                    logger.log("session: access token expired or rejected (401), refreshing with refresh token $refreshToken")
                     val response = client.post("$baseUrl/auth/refresh") {
                         markAsRefreshTokenRequest()
                         contentType(ContentType.Application.Json)
@@ -68,9 +76,14 @@ class BouncerApiClient(
                     }
                     if (response.status.isSuccess()) {
                         val tokens = response.body<TokenPairResponse>()
+                        logger.log(TokenLogDescriptions.describeTokenPair("refresh", tokens))
                         tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken)
                         BearerTokens(tokens.accessToken, tokens.refreshToken)
                     } else {
+                        logger.log(
+                            "session: refresh rejected (${response.status.value}), refresh token expired or revoked: " +
+                                "local session cleared, login required",
+                        )
                         tokenStorage.clear()
                         null
                     }
@@ -80,6 +93,8 @@ class BouncerApiClient(
                 }
             }
         }
+        // After Auth, so that the retry it makes following a refresh is logged as its own attempt.
+        install(TrafficLogging) { logger = this@BouncerApiClient.logger }
     }
 
     suspend fun login(email: String, password: String, clientType: String): UiState<TokenPairResponse> {
@@ -90,6 +105,7 @@ class BouncerApiClient(
             }
         }
         if (result is UiState.Content) {
+            logger.log(TokenLogDescriptions.describeTokenPair("login", result.data))
             tokenStorage.saveTokens(result.data.accessToken, result.data.refreshToken)
             forgetCachedBearerTokens()
         }
@@ -98,6 +114,7 @@ class BouncerApiClient(
 
     suspend fun logout(): UiState<Unit> {
         val refreshToken = tokenStorage.getRefreshToken()
+        logger.log("session: logout, revoking the refresh token on the server and clearing the local session")
         val result = if (refreshToken == null) {
             UiState.Content(Unit)
         } else {
@@ -132,12 +149,16 @@ class BouncerApiClient(
             }
         }) {
             is UiState.Content -> {
+                logger.log(TokenLogDescriptions.describeTokenPair("restore", result.data))
                 tokenStorage.saveTokens(result.data.accessToken, result.data.refreshToken)
                 forgetCachedBearerTokens()
                 UiState.Content(Unit)
             }
             is UiState.Error -> {
-                if (result.type == ErrorType.UNAUTHORIZED) clearLocalSession()
+                if (result.type == ErrorType.UNAUTHORIZED) {
+                    logger.log("session: saved refresh token rejected, local session cleared, login required")
+                    clearLocalSession()
+                }
                 result
             }
             UiState.Loading -> UiState.Loading

@@ -13,6 +13,15 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        // Where the app finds the backend. The default is the emulator's alias for the host machine;
+        // a physical device overrides it, e.g. -Pbouncer.backendUrl=http://localhost:8080 with `adb reverse`.
+        val backendUrl = providers.gradleProperty("bouncer.backendUrl").orElse("http://10.0.2.2:8080").get()
+        buildConfigField("String", "BACKEND_BASE_URL", "\"$backendUrl\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 }
 

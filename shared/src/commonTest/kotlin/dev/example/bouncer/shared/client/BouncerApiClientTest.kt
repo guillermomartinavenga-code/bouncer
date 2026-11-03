@@ -15,6 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * Verifies the LCE/token-refresh contract from CLAUDE.md: a 401 from access-token expiry is
@@ -115,5 +116,48 @@ class BouncerApiClientTest {
         assertIs<UiState.Error>(result)
         assertEquals(ErrorType.FORBIDDEN, result.type)
         assertFalse(refreshCalled)
+    }
+
+    @Test
+    fun `logger reports the rejected attempt, the refresh and the retry in order`() = runTest {
+        val tokenStorage = InMemoryTokenStorage()
+        tokenStorage.saveTokens("expired-access", "valid-refresh")
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/items" ->
+                    if (request.headers[HttpHeaders.Authorization] == "Bearer expired-access") {
+                        respond("", HttpStatusCode.Unauthorized)
+                    } else {
+                        respond("[]", HttpStatusCode.OK, jsonContentType)
+                    }
+                "/auth/refresh" -> respond(
+                    """{"accessToken":"new-access","accessTokenExpiresAt":0,"refreshToken":"new-refresh","refreshTokenExpiresAt":0}""",
+                    HttpStatusCode.OK,
+                    jsonContentType,
+                )
+                else -> respond("", HttpStatusCode.NotFound)
+            }
+        }
+        val lines = mutableListOf<String>()
+
+        BouncerApiClient("http://test", tokenStorage, engine, ClientLogger { lines += it }).getItems()
+
+        val expectedInOrder = listOf(
+            "--> GET http://test/items",
+            "<-- 401 GET http://test/items",
+            "session: access token expired or rejected (401), refreshing with refresh token valid-refresh",
+            "--> POST http://test/auth/refresh",
+            "<-- 200 POST http://test/auth/refresh",
+            "refresh: tokens received",
+            "--> GET http://test/items",
+            "<-- 200 GET http://test/items",
+        )
+        var from = 0
+        for (expected in expectedInOrder) {
+            val found = lines.drop(from).indexOfFirst { it.startsWith(expected) }
+            assertTrue(found >= 0, "missing or out of order: '$expected' in $lines")
+            from += found + 1
+        }
+        assertTrue(lines.any { it.contains("new-access") && it.contains("new-refresh") }, "tokens received should be printed")
     }
 }

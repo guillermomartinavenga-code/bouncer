@@ -4,6 +4,7 @@ import dev.example.bouncer.backend.security.JwtTokenGateway
 import dev.example.bouncer.backend.security.PolicyEnforcementPoint
 import dev.example.bouncer.backend.security.principal
 import dev.example.bouncer.shared.domain.ResourceNotFoundException
+import dev.example.bouncer.shared.domain.auth.TokenPair
 import dev.example.bouncer.shared.domain.model.ClientType
 import dev.example.bouncer.shared.domain.policy.Action
 import dev.example.bouncer.shared.domain.repository.UserRepository
@@ -17,10 +18,12 @@ import io.github.smiley4.ktoropenapi.get
 import io.github.smiley4.ktoropenapi.post
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.log
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
+import java.time.Instant
 
 fun Route.authRoutes(
     authenticateUserUseCase: AuthenticateUserUseCase,
@@ -39,6 +42,7 @@ fun Route.authRoutes(
                 "invalid client_type '${request.clientType}', expected 'android' or 'web'",
             )
         val tokens = authenticateUserUseCase(request.email, request.password, clientType)
+        call.application.log.info("login: {} from client_type={}\n{}", request.email, clientType, tokens.describe())
         call.respond(tokens.toResponse())
     }
 
@@ -46,7 +50,11 @@ fun Route.authRoutes(
         description = "Validates and rotates a refresh token, issuing a new access token."
     }) {
         val request = call.receive<RefreshRequest>()
-        call.respond(refreshSessionUseCase(request.refreshToken).toResponse())
+        val tokens = refreshSessionUseCase(request.refreshToken)
+        call.application.log.info(
+            "refresh: token {} rotated\n{}", request.refreshToken.fingerprint(), tokens.describe(),
+        )
+        call.respond(tokens.toResponse())
     }
 
     post("/auth/logout", {
@@ -54,6 +62,7 @@ fun Route.authRoutes(
     }) {
         val request = call.receive<LogoutRequest>()
         logoutUseCase(request.refreshToken)
+        call.application.log.info("logout: refresh token {} revoked", request.refreshToken.fingerprint())
         call.respond(HttpStatusCode.NoContent)
     }
 
@@ -76,3 +85,11 @@ fun Route.authRoutes(
 
 private fun parseClientType(raw: String): ClientType? =
     ClientType.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+
+/** Tokens are never logged server-side: just enough of the tail to correlate a rotation, plus the expiry times. */
+private fun String.fingerprint() = "…${takeLast(6)}"
+
+private fun TokenPair.describe() =
+    "    access token  expires ${Instant.ofEpochMilli(accessToken.expiresAtEpochMillis)}\n" +
+        "    refresh token ${refreshToken.value.fingerprint()} expires " +
+        Instant.ofEpochMilli(refreshToken.expiresAtEpochMillis)

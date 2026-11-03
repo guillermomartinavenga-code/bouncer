@@ -20,6 +20,10 @@ private val PrincipalKey = AttributeKey<AuthenticatedPrincipal>("AuthenticatedPr
 val ApplicationCall.principal: AuthenticatedPrincipal
     get() = attributes[PrincipalKey]
 
+/** Same as [principal] but null on unauthenticated routes or when authentication failed (used for logging). */
+val ApplicationCall.principalOrNull: AuthenticatedPrincipal?
+    get() = attributes.getOrNull(PrincipalKey)
+
 class PolicyEnforcementConfig {
     lateinit var tokenGateway: TokenGateway
     lateinit var action: Action

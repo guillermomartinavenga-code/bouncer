@@ -7,6 +7,7 @@ import dev.example.bouncer.backend.routes.customerRoutes
 import dev.example.bouncer.backend.routes.itemRoutes
 import dev.example.bouncer.backend.routes.orderRoutes
 import dev.example.bouncer.backend.security.JwtTokenGateway
+import dev.example.bouncer.backend.security.principalOrNull
 import dev.example.bouncer.shared.domain.auth.TokenGateway
 import dev.example.bouncer.shared.domain.repository.ItemRepository
 import dev.example.bouncer.shared.domain.repository.OrderRepository
@@ -24,8 +25,11 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.calllogging.CallLogging
+import io.ktor.server.plugins.calllogging.processingTimeMillis
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.uri
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import org.koin.ktor.ext.inject
@@ -39,7 +43,16 @@ fun Application.module() {
     install(ContentNegotiation) {
         json()
     }
-    install(CallLogging)
+    install(CallLogging) {
+        // One line per request: status, duration and who made it (the principal is only known on
+        // routes behind the PolicyEnforcementPoint, and only if the access token verified).
+        format { call ->
+            val principal = call.principalOrNull
+            val who = if (principal == null) "anonymous" else "user=${principal.userId} role=${principal.role}"
+            "${call.response.status()?.value} ${call.request.httpMethod.value} ${call.request.uri} " +
+                "(${call.processingTimeMillis()} ms) $who"
+        }
+    }
     install(CORS) {
         // The browser web app (dev server on :8081) calls this backend cross-origin. Only that dev
         // origin is allowed; the Android app isn't a browser, so CORS doesn't apply to it.

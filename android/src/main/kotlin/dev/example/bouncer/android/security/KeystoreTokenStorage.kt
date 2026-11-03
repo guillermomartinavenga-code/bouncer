@@ -76,9 +76,15 @@ class KeystoreTokenStorage(context: Context) : TokenStorage {
                 .putString(KEY_ENCRYPTED_REFRESH_TOKEN, Base64.encodeToString(encrypted, Base64.NO_WRAP))
                 .apply()
         } catch (e: Exception) {
-            // Typically: no secure lock screen set up, so an auth-required key can't be created.
-            // The session still works in memory; it just can't survive an app restart.
-            Log.w(TAG, "Could not persist the refresh token; session will be memory-only", e)
+            // Typically: no screen lock, or no biometric enrolled (a PIN alone isn't enough), so an
+            // auth-required key can't be created. The session still works in memory; it just can't
+            // survive an app restart.
+            Log.w(
+                TAG,
+                "Could not persist the refresh token (needs a screen lock and an enrolled fingerprint); " +
+                    "session will be memory-only",
+                e,
+            )
         }
     }
 

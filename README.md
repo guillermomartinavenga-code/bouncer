@@ -82,9 +82,44 @@ La primera vez tarda (descarga Node/Yarn y compila a WebAssembly). Cuando termin
    ./gradlew :android:installDebug
    ```
 
-El emulador llega al backend en `http://10.0.2.2:8080`. Para un dispositivo físico hay que cambiar `BACKEND_BASE_URL` en `android/.../di/AndroidModule.kt` por la IP de tu máquina y agregarla al `network_security_config.xml`.
+### Backend desde el emulador o desde un teléfono real
+
+La URL del backend se fija al compilar con la propiedad de Gradle `bouncer.backendUrl` (queda en `BuildConfig.BACKEND_BASE_URL`). Por defecto es `http://10.0.2.2:8080`, el alias que usa el **emulador** para llegar a tu máquina; ese alias no existe en un dispositivo físico, donde el login fallaría por no encontrar el servidor.
+
+Para un **dispositivo físico** conectado por USB (con la depuración USB activada) se redirige el puerto del teléfono al de tu máquina con `adb reverse`, y la app apunta a `localhost`, que el `network_security_config.xml` ya permite en claro:
+
+```bash
+adb reverse tcp:8080 tcp:8080
+./gradlew :android:installDebug -Pbouncer.backendUrl=http://localhost:8080
+```
+
+`adb reverse` se pierde al desconectar el cable o reiniciar `adb`; si el login vuelve a fallar, repetí el primer comando. Para volver al emulador, reinstalá sin la propiedad.
+
+No se abre tráfico en claro hacia la red local a propósito: usar la IP de tu máquina por Wi-Fi exigiría permitir HTTP a esa IP en el `network_security_config.xml`.
 
 Para probar la sesión protegida por biometría, el emulador necesita un PIN de pantalla y una huella registrada; sin eso la app funciona pero la sesión no se guarda entre reinicios.
+
+## Logs de tráfico y de tokens
+
+Sirven para ver en vivo qué pasa con la sesión (login, expiración, refresh, re-login).
+
+**Backend** (terminal donde corre `:backend:run`): una línea por request con status, duración y quién la hizo, el motivo de cada rechazo, y los eventos de auth con los vencimientos. El backend nunca imprime tokens, solo los últimos 6 caracteres del refresh token para poder seguir su rotación:
+
+```
+login: ana@example.com from client_type=ANDROID
+    access token  expires 2026-11-02T14:28:20.542Z
+    refresh token …cb1312 expires 2026-11-02T14:33:20.549Z
+rejected GET /orders/order-4: FORBIDDEN a CUSTOMER can only view their own orders
+403 GET /orders/order-4 (10 ms) user=customer-1 role=CUSTOMER
+refresh: token …cb1312 rotated
+```
+
+**Clientes**: cada intento HTTP (`-->` / `<--` con status y duración), qué access token se envió y cuántos segundos le quedaban, los tokens completos recibidos en login/refresh (con los claims decodificados) y los eventos de sesión (`session: access token expired or rejected (401), refreshing…`, `refresh rejected … login required`). Cuando vence el access token se ve la secuencia: request con 401 → `POST /auth/refresh` → request repetida con el token nuevo.
+
+- Android: solo en builds debug, en Logcat con el tag `Bouncer`: `adb logcat -s Bouncer` (o el filtro `tag:Bouncer` en el panel Logcat de IntelliJ).
+- Web: en la consola del navegador (DevTools), prefijo `[Bouncer]`.
+
+Los clientes imprimen los tokens **completos** (para poder pegarlos en jwt.io o Postman). Es una decisión de demo: cualquiera con acceso a esos logs puede reutilizar los tokens mientras no venzan, por eso en Android el logger no existe en builds release.
 
 ## Comandos de Gradle
 

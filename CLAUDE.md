@@ -26,6 +26,7 @@ Commands (Gradle wrapper; Android builds need `ANDROID_HOME=$HOME/Android/Sdk`, 
 ./gradlew :shared:jvmTest              # unit tests (BOLA, client_type, HTTP-client refresh)
 ./gradlew :shared:jvmTest --tests "*PolicyDecisionPointTest"   # a single test class
 ./gradlew :android:assembleDebug       # Android APK; the emulator reaches the backend at 10.0.2.2:8080
+                                       # (physical device: adb reverse tcp:8080 tcp:8080 + -Pbouncer.backendUrl=http://localhost:8080)
 ./gradlew :web:wasmJsBrowserDevelopmentRun   # web app on http://localhost:8081 (needs the backend on :8080)
 ./gradlew build                        # everything
 ```

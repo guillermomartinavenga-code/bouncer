@@ -15,6 +15,8 @@ import io.ktor.server.application.install
 import io.ktor.server.application.log
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.uri
 import io.ktor.server.response.respond
 
 fun Application.installStatusPages() {
@@ -51,5 +53,7 @@ fun Application.installStatusPages() {
 }
 
 private suspend fun ApplicationCall.respondError(status: HttpStatusCode, type: ErrorType, message: String?) {
+    // The access log only has the status; this adds why the request was rejected (e.g. which rule denied it).
+    application.log.info("rejected {} {}: {} {}", request.httpMethod.value, request.uri, type, message ?: status.description)
     respond(status, ErrorResponse(type.name, message ?: status.description))
 }
